@@ -1,6 +1,7 @@
 node_modules
 .env
 .env.*
+data/raw/
 data/structured/
 data/chunks/
 data/vectors_ready/
