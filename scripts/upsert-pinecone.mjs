@@ -50,7 +50,10 @@ async function main() {
         return {
           id: parsed.id,
           values: parsed.values,
-          metadata: parsed.metadata,
+          metadata: {
+            ...parsed.metadata,
+            text: parsed.text, 
+          },
         };
       });
 

@@ -60,8 +60,11 @@ async function embedChunksFile(filename) {
       const record = {
         id: chunk.id,
         values: embedding,
-        metadata: chunk.metadata,
-        text: chunk.text, // optional but handy for debugging
+        metadata: {
+          ...chunk.metadata,
+          text: chunk.text,
+        },
+        text: chunk.text,
       };
 
       outStream.write(JSON.stringify(record) + '\n');
