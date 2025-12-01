@@ -18,7 +18,7 @@ const readFile = promisify(fs.readFile);
 const mkdir = promisify(fs.mkdir);
 const writeFile = promisify(fs.writeFile);
 
-const TARGET_WORDS_MIN = 250;  // rough proxy for ~300–800 tokens
+const TARGET_WORDS_MIN = 250; 
 const TARGET_WORDS_MAX = 600;
 
 async function ensureDir(dir) {
@@ -42,9 +42,6 @@ function approxWordCount(text) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-/**
- * Turn one Unstructured JSON file into chunks.
- */
 function buildChunks(elements, docId, sourcePath) {
   const chunks = [];
   let currentText = '';
@@ -95,7 +92,6 @@ function buildChunks(elements, docId, sourcePath) {
     const wc = approxWordCount(prospective);
 
     if (wc > TARGET_WORDS_MAX && currentText) {
-      // flush what we have and start new
       flushChunk();
       currentText = text;
       currentPages = [];
@@ -109,7 +105,6 @@ function buildChunks(elements, docId, sourcePath) {
     }
   }
 
-  // final chunk
   flushChunk();
   return chunks;
 }
