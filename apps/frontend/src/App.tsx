@@ -16,6 +16,10 @@ const App: React.FC = () => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const [sessionId, setSessionId] = useState<string | null>(() => {
+    return localStorage.getItem('sessionId');
+  });
+
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
     const trimmed = input.trim();
@@ -35,7 +39,7 @@ const App: React.FC = () => {
       const resp = await fetch(BACKEND_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed }),
+        body: JSON.stringify({ message: trimmed, sessionId }),
       });
 
       if (!resp.ok) {
@@ -43,6 +47,11 @@ const App: React.FC = () => {
       }
 
       const data = await resp.json();
+
+      if (data.sessionId && data.sessionId !== sessionId) {
+        setSessionId(data.sessionId);
+        localStorage.setItem('sessionId', data.sessionId);
+      }
 
       const assistantMsg: Message = {
         id: crypto.randomUUID(),
