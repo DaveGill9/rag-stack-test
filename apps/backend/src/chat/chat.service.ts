@@ -160,9 +160,9 @@ export class ChatService {
       User question:
       ${message}
 
-Context:
-${context}
-`.trim();
+      Context:
+      ${context}
+      `.trim();
 
     const chatRes = await this.openai.chat.completions.create({
       model: LLM_MODEL,
@@ -181,7 +181,6 @@ ${context}
 
     const answer = chatRes.choices[0]?.message?.content ?? '';
 
-    // 7) Persist conversation into session
     upsertSessionTurn(session, {
       role: 'user',
       content: message,
