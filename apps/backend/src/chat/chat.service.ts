@@ -83,18 +83,18 @@ export class ChatService {
     const context = contextBlocks.join('\n\n---\n\n');
 
     const systemPrompt = `
-You are a helpful assistant that answers questions using ONLY the provided context.
-If the context does not contain the answer, say you don't know.
-Always indicate which source(s) you used in your answer.
-`.trim();
+      You are a helpful assistant that answers questions using ONLY the provided context.
+      If the context does not contain the answer, say you don't know.
+      Always indicate which source(s) you used in your answer.
+      `.trim();
 
     const userPrompt = `
-User question:
-${message}
+      User question:
+      ${message}
 
-Context:
-${context}
-`.trim();
+      Context:
+      ${context}
+      `.trim();
 
     const chatRes = await this.openai.chat.completions.create({
       model: LLM_MODEL,
