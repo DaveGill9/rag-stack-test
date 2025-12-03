@@ -10,6 +10,7 @@ type Message = {
 };
 
 const BACKEND_URL = 'http://localhost:3000/chat';
+const BACKEND_STREAM_URL = 'http://localhost:3000/chat/stream';
 
 const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -24,50 +25,97 @@ const App: React.FC = () => {
     e?.preventDefault();
     const trimmed = input.trim();
     if (!trimmed || loading) return;
-
+  
     const userMsg: Message = {
       id: crypto.randomUUID(),
       role: 'user',
       content: trimmed,
     };
-
-    setMessages((prev) => [...prev, userMsg]);
+  
+    const assistantId = crypto.randomUUID();
+  
+    setMessages((prev) => [
+      ...prev,
+      userMsg,
+      {
+        id: assistantId,
+        role: 'assistant',
+        content: '',
+        sources: [],
+      },
+    ]);
+  
     setInput('');
     setLoading(true);
-
+  
     try {
-      const resp = await fetch(BACKEND_URL, {
+      const resp = await fetch(BACKEND_STREAM_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: trimmed, sessionId }),
       });
-
-      if (!resp.ok) {
-        throw new Error(`Backend error: ${resp.status}`);
+  
+      if (!resp.body) {
+        throw new Error('No response body');
       }
-
-      const data = await resp.json();
-
-      if (data.sessionId && data.sessionId !== sessionId) {
-        setSessionId(data.sessionId);
-        localStorage.setItem('sessionId', data.sessionId);
+  
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+  
+      let done = false;
+  
+      while (!done) {
+        const { value, done: streamDone } = await reader.read();
+        if (streamDone) break;
+        const chunkText = decoder.decode(value, { stream: true });
+  
+        // SSE events separated by double newline
+        const lines = chunkText
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((l) => l.startsWith('data:'));
+  
+        for (const line of lines) {
+          const jsonStr = line.replace(/^data:\s*/, '');
+          if (!jsonStr) continue;
+          const event = JSON.parse(jsonStr);
+  
+          if (event.type === 'meta') {
+            if (event.sessionId && event.sessionId !== sessionId) {
+              setSessionId(event.sessionId);
+              localStorage.setItem('sessionId', event.sessionId);
+            }
+            if (event.sources) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, sources: event.sources } : m
+                )
+              );
+            }
+          } else if (event.type === 'token') {
+            const token: string = event.content ?? '';
+            if (!token) continue;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, content: m.content + token }
+                  : m
+              )
+            );
+          } else if (event.type === 'done') {
+            done = true;
+          }
+        }
       }
-
-      const assistantMsg: Message = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: data.answer ?? '',
-        sources: data.sources ?? [],
-      };
-
-      setMessages((prev) => [...prev, assistantMsg]);
     } catch (err: any) {
-      const assistantMsg: Message = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: `Error: ${err.message}`,
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: `Error: ${err.message}`,
+        },
+      ]);
     } finally {
       setLoading(false);
     }
