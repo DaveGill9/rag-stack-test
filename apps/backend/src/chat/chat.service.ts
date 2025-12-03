@@ -204,178 +204,118 @@ export class ChatService {
     };
   }
 
-  async generateAnswerStream(
-    message: string,
-    sessionId: string | undefined,
-    res: Response
-  ) {
+  async *generateAnswerStream(message: string, sessionId?: string) {
     if (!message || !message.trim()) {
-      res.write(
-        `data: ${JSON.stringify({
-          type: 'error',
-          error: 'Message is required',
-        })}\n\n`
-      );
-      res.end();
+      yield { data: { type: 'error', error: 'Message is required' } };
       return;
     }
-
+  
     const requestId = crypto.randomUUID();
-    this.logger.log(`[${requestId}] (stream) message: "${message}"`);
-
-    let session: Session | null = getSession(sessionId);
-    if (!session) session = createSession();
-
-    const t0 = Date.now();
+    this.logger.log(`[${requestId}] (SSE) message: "${message}"`);
+  
+    let session = getSession(sessionId) ?? createSession();
+  
+    const embedStart = Date.now();
     const embeddingRes = await this.openai.embeddings.create({
       model: EMBEDDING_MODEL,
       input: message,
     });
-    const tEmbed = Date.now();
-    this.logger.log(
-      `[${requestId}] (stream) Embed latency: ${tEmbed - t0} ms`
-    );
-
+    const embedEnd = Date.now();
+    this.logger.log(`[${requestId}] Embed latency: ${embedEnd - embedStart}ms`);
+  
     const queryVector = embeddingRes.data[0].embedding;
     const index = this.pinecone.index(PINECONE_INDEX);
     const ns = index.namespace(PINECONE_NAMESPACE);
-
+  
+    const pineStart = Date.now();
     const queryRes = await ns.query({
       topK: 5,
       vector: queryVector,
       includeMetadata: true,
     });
-
-    const tPinecone = Date.now();
-    this.logger.log(
-      `[${requestId}] (stream) Pinecone latency: ${tPinecone - tEmbed} ms`
-    );
-
+    const pineEnd = Date.now();
+    this.logger.log(`[${requestId}] Pinecone latency: ${pineEnd - pineStart}ms`);
+  
     const matches = queryRes.matches || [];
     const sources = matches.map((m) => ({
       id: m.id,
       score: m.score,
       metadata: m.metadata,
     }));
-
+  
     const bestScore = matches[0]?.score ?? 0;
     if (!matches.length || bestScore < 0.15) {
-      const safeAnswer =
-        "I’m not confident I can answer that from the loaded documents.";
-
+      const safeAnswer = "I’m not confident I can answer that from the loaded documents.";
+  
       upsertSessionTurn(session, { role: 'user', content: message });
       upsertSessionTurn(session, {
         role: 'assistant',
         content: safeAnswer,
         sources: [],
       });
-
-      res.write(
-        `data: ${JSON.stringify({
-          type: 'meta',
-          sessionId: session.id,
-          sources: [],
-          requestId,
-        })}\n\n`
-      );
-      res.write(
-        `data: ${JSON.stringify({
-          type: 'done',
-          content: safeAnswer,
-        })}\n\n`
-      );
-      res.end();
+  
+      yield { data: { type: 'meta', sessionId: session.id, sources: [], requestId } };
+      yield { data: { type: 'done', content: safeAnswer } };
       return;
     }
 
     const contextBlocks = matches.map((m, i) => {
-      const meta: any = m.metadata || {};
+      const meta = m.metadata || {};
       const title = meta.source_path || meta.doc_id || 'Unknown document';
-      const pageFrom =
-        meta.page_from ?? (meta.page_from === 0 ? 0 : undefined);
-      const pageTo =
-        meta.page_to ?? (meta.page_to === 0 ? 0 : undefined);
+      const pageFrom = meta.page_from;
+      const pageTo = meta.page_to;
+  
       const pageStr =
-        pageFrom !== undefined && pageTo !== undefined
-          ? ` (pages ${pageFrom}-${pageTo})`
-          : '';
-      const header = `Source ${i + 1}: ${title}${pageStr}`;
-      const content = meta.text || '[no text stored in metadata]';
-      return `${header}\n${content}`;
+        pageFrom != null && pageTo != null ? ` (pages ${pageFrom}-${pageTo})` : '';
+  
+      return `Source ${i + 1}: ${title}${pageStr}\n${meta.text ?? '[no text stored]'}`;
     });
-
+  
     const context = contextBlocks.join('\n\n---\n\n');
-
+  
     const recentTurns = getRecentTurns(session, 6);
-    const historyMessages = recentTurns.map(
-      (t): OpenAI.Chat.Completions.ChatCompletionMessageParam => ({
-        role: t.role,
-        content: t.content,
-      })
-    );
-
+  
     const systemPrompt = `
       You are a helpful assistant that must answer using ONLY the provided context.
       If the context does not contain the answer, say you don't know.
       Always indicate which source(s) you used in your answer.
       `.trim();
-
+  
     const userPrompt = `
       User question:
       ${message}
-
-      Context:
-      ${context}
-      `.trim();
-
-    res.write(
-      `data: ${JSON.stringify({
-        type: 'meta',
-        sessionId: session.id,
-        sources,
-        requestId,
-      })}\n\n`
-    );
-
+  
+  Context:
+  ${context}
+  `.trim();
+  
+    yield { data: { type: 'meta', sessionId: session.id, sources, requestId } };
     const stream = await this.openai.chat.completions.create({
       model: LLM_MODEL,
       temperature: 0.2,
       stream: true,
       messages: [
         { role: 'system', content: systemPrompt },
-        ...historyMessages,
+        ...recentTurns.map((t) => ({ role: t.role, content: t.content })),
         { role: 'user', content: userPrompt },
       ],
     });
-
+  
     let fullAnswer = '';
-
+  
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta?.content;
       if (!delta) continue;
+  
       fullAnswer += delta;
-
-      res.write(
-        `data: ${JSON.stringify({ type: 'token', content: delta })}\n\n`
-      );
+  
+      yield { data: { type: 'token', content: delta } };
     }
 
-    const tLlm = Date.now();
-    this.logger.log(
-      `[${requestId}] (stream) LLM latency: ${tLlm - tPinecone} ms`
-    );
-
-    res.write(
-      `data: ${JSON.stringify({ type: 'done', content: fullAnswer })}\n\n`
-    );
-    res.end();
-
+    yield { data: { type: 'done', content: fullAnswer } };
     upsertSessionTurn(session, { role: 'user', content: message });
-    upsertSessionTurn(session, {
-      role: 'assistant',
-      content: fullAnswer,
-      sources,
-    });
+    upsertSessionTurn(session, { role: 'assistant', content: fullAnswer, sources });
   }
+  
 
 }
