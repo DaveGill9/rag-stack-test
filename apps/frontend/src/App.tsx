@@ -1,5 +1,4 @@
-// src/App.tsx
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import './App.css';
 
 type Message = {
@@ -15,10 +14,36 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-
   const [sessionId, setSessionId] = useState<string | null>(() => {
     return localStorage.getItem('sessionId');
   });
+
+  useEffect(() => {
+    const stored = localStorage.getItem('sessionId');
+    if (!stored) return;
+
+    (async () => {
+      try {
+        const resp = await fetch(`http://localhost:3000/chat/session/${stored}`);
+        if (!resp.ok) return;
+
+        const data = await resp.json();
+        const turns = data.turns || [];
+
+        const restoredMessages: Message[] = turns.map((t: any, idx: number) => ({
+          id: `${data.sessionId}-${idx}`,
+          role: t.role,
+          content: t.content,
+          sources: t.sources ?? [],
+        }));
+
+        setMessages(restoredMessages);
+        setSessionId(data.sessionId);
+      } catch (err) {
+        console.error('Failed to restore session', err);
+      }
+    })();
+  }, []);
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
