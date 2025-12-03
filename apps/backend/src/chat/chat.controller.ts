@@ -1,6 +1,6 @@
-import { Body, Controller, Post, Res } from '@nestjs/common';
-import type { Response } from 'express';
+import { Body, Controller, Post, Sse } from '@nestjs/common';
 import { ChatService } from './chat.service';
+import { Observable } from 'rxjs';
 
 class ChatRequestDto {
   message: string;
@@ -14,20 +14,12 @@ export class ChatController {
   @Post()
   async chat(@Body() body: ChatRequestDto) {
     const { message, sessionId } = body;
-    const result = await this.chatService.generateAnswer(message, sessionId);
-    return result;
+    return this.chatService.generateAnswer(message, sessionId);
   }
 
-  @Post('stream')
-  async chatStream(
-    @Body() body: ChatRequestDto,
-    @Res() res: Response
-  ) {
+  @Sse('stream')
+  async stream(@Body() body: ChatRequestDto) {
     const { message, sessionId } = body;
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    await this.chatService.generateAnswerStream(message, sessionId, res);
+    return this.chatService.generateAnswerStream(message, sessionId);
   }
 }
