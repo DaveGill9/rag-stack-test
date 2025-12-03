@@ -9,7 +9,6 @@ type Message = {
   sources?: any[];
 };
 
-const BACKEND_URL = 'http://localhost:3000/chat';
 const BACKEND_STREAM_URL = 'http://localhost:3000/chat/stream';
 
 const App: React.FC = () => {
@@ -69,7 +68,6 @@ const App: React.FC = () => {
         if (streamDone) break;
         const chunkText = decoder.decode(value, { stream: true });
   
-        // SSE events separated by double newline
         const lines = chunkText
           .split('\n')
           .map((l) => l.trim())
