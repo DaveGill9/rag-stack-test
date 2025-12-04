@@ -68,7 +68,7 @@ export class ChatService {
 
     const tEmbed = Date.now();
     this.logger.log(
-      `[${requestId}] Embed latency: ${tEmbed - t0} ms`
+      `[${requestId}] Embed latency: ${tEmbed - t0} ms`,
     );
 
     const queryVector = embeddingRes.data[0].embedding;
@@ -83,7 +83,7 @@ export class ChatService {
 
     const tPinecone = Date.now();
     this.logger.log(
-      `[${requestId}] Pinecone latency: ${tPinecone - tEmbed} ms`
+      `[${requestId}] Pinecone latency: ${tPinecone - tEmbed} ms`,
     );
 
     const matches = queryRes.matches || [];
@@ -96,17 +96,21 @@ export class ChatService {
     this.logger.log(
       `[${requestId}] Retrieved chunks: ${matches
         .map((m) => `${m.id} (${m.score?.toFixed(3)})`)
-        .join(', ')}`
+        .join(', ')}`,
     );
 
     const bestScore = matches[0]?.score ?? 0;
     if (!matches.length || bestScore < 0.15) {
       const safeAnswer =
         "I’m not confident I can answer that from the loaded documents. " +
-        "Try rephrasing the question or adding more relevant documents.";
+        'Try rephrasing the question or adding more relevant documents.';
 
-      upsertSessionTurn(session, { role: 'user', content: message });
-      upsertSessionTurn(session, {
+      // 🔑 Chain the session updates so both turns are kept
+      session = await upsertSessionTurn(session, {
+        role: 'user',
+        content: message,
+      });
+      const updatedSession = await upsertSessionTurn(session, {
         role: 'assistant',
         content: safeAnswer,
         sources: [],
@@ -115,7 +119,7 @@ export class ChatService {
       return {
         answer: safeAnswer,
         sources: [],
-        sessionId: session.id,
+        sessionId: updatedSession.id,
         requestId,
       };
     }
@@ -140,7 +144,6 @@ export class ChatService {
 
     const context = contextBlocks.join('\n\n---\n\n');
 
-
     const recentTurns = getRecentTurns(session, 6);
     const historyMessages = recentTurns.map((t) => ({
       role: t.role,
@@ -152,7 +155,7 @@ export class ChatService {
       If the context does not contain the answer, say you don't know.
       Always indicate which source(s) you used in your answer.
       Do NOT guess or fabricate facts. If unsure, say you are unsure.
-      `.trim();
+    `.trim();
 
     const userPrompt = `
       User question:
@@ -160,7 +163,7 @@ export class ChatService {
 
       Context:
       ${context}
-      `.trim();
+    `.trim();
 
     const chatRes = await this.openai.chat.completions.create({
       model: LLM_MODEL,
@@ -174,12 +177,16 @@ export class ChatService {
 
     const tLlm = Date.now();
     this.logger.log(
-      `[${requestId}] LLM latency: ${tLlm - tPinecone} ms`
+      `[${requestId}] LLM latency: ${tLlm - tPinecone} ms`,
     );
 
     const answer = chatRes.choices[0]?.message?.content ?? '';
 
-    await upsertSessionTurn(session, { role: 'user', content: message });
+    // 🔑 Chain updates again here
+    session = await upsertSessionTurn(session, {
+      role: 'user',
+      content: message,
+    });
     const updatedSession = await upsertSessionTurn(session, {
       role: 'assistant',
       content: answer,
@@ -187,7 +194,7 @@ export class ChatService {
     });
 
     this.logger.log(
-      `[${requestId}] Session ${updatedSession.id} now has ${updatedSession.turns.length} turns`
+      `[${requestId}] Session ${updatedSession.id} now has ${updatedSession.turns.length} turns`,
     );
 
     return {
@@ -201,14 +208,14 @@ export class ChatService {
   async generateAnswerStream(
     message: string,
     sessionId: string | undefined,
-    res: Response
+    res: Response,
   ) {
     if (!message || !message.trim()) {
       res.write(
         `data: ${JSON.stringify({
           type: 'error',
           error: 'Message is required',
-        })}\n\n`
+        })}\n\n`,
       );
       res.end();
       return;
@@ -227,7 +234,7 @@ export class ChatService {
     });
     const tEmbed = Date.now();
     this.logger.log(
-      `[${requestId}] (stream) Embed latency: ${tEmbed - t0} ms`
+      `[${requestId}] (stream) Embed latency: ${tEmbed - t0} ms`,
     );
 
     const queryVector = embeddingRes.data[0].embedding;
@@ -242,7 +249,7 @@ export class ChatService {
 
     const tPinecone = Date.now();
     this.logger.log(
-      `[${requestId}] (stream) Pinecone latency: ${tPinecone - tEmbed} ms`
+      `[${requestId}] (stream) Pinecone latency: ${tPinecone - tEmbed} ms`,
     );
 
     const matches = queryRes.matches || [];
@@ -257,12 +264,16 @@ export class ChatService {
       const safeAnswer =
         "I’m not confident I can answer that from the loaded documents.";
 
-        await upsertSessionTurn(session, { role: 'user', content: message });
-        await upsertSessionTurn(session, {
-          role: 'assistant',
-          content: safeAnswer,
-          sources: [],
-        });
+      // 🔑 Chain here too
+      session = await upsertSessionTurn(session, {
+        role: 'user',
+        content: message,
+      });
+      await upsertSessionTurn(session, {
+        role: 'assistant',
+        content: safeAnswer,
+        sources: [],
+      });
 
       res.write(
         `data: ${JSON.stringify({
@@ -270,13 +281,13 @@ export class ChatService {
           sessionId: session.id,
           sources: [],
           requestId,
-        })}\n\n`
+        })}\n\n`,
       );
       res.write(
         `data: ${JSON.stringify({
           type: 'done',
           content: safeAnswer,
-        })}\n\n`
+        })}\n\n`,
       );
       res.end();
       return;
@@ -305,14 +316,14 @@ export class ChatService {
       (t): OpenAI.Chat.Completions.ChatCompletionMessageParam => ({
         role: t.role,
         content: t.content,
-      })
+      }),
     );
 
     const systemPrompt = `
       You are a helpful assistant that must answer using ONLY the provided context.
       If the context does not contain the answer, say you don't know.
       Always indicate which source(s) you used in your answer.
-      `.trim();
+    `.trim();
 
     const userPrompt = `
       User question:
@@ -320,7 +331,7 @@ export class ChatService {
 
       Context:
       ${context}
-      `.trim();
+    `.trim();
 
     res.write(
       `data: ${JSON.stringify({
@@ -328,7 +339,7 @@ export class ChatService {
         sessionId: session.id,
         sources,
         requestId,
-      })}\n\n`
+      })}\n\n`,
     );
 
     const stream = await this.openai.chat.completions.create({
@@ -350,27 +361,29 @@ export class ChatService {
       fullAnswer += delta;
 
       res.write(
-        `data: ${JSON.stringify({ type: 'token', content: delta })}\n\n`
+        `data: ${JSON.stringify({ type: 'token', content: delta })}\n\n`,
       );
     }
 
     const tLlm = Date.now();
     this.logger.log(
-      `[${requestId}] (stream) LLM latency: ${tLlm - tPinecone} ms`
+      `[${requestId}] (stream) LLM latency: ${tLlm - tPinecone} ms`,
     );
 
     res.write(
-      `data: ${JSON.stringify({ type: 'done', content: fullAnswer })}\n\n`
+      `data: ${JSON.stringify({ type: 'done', content: fullAnswer })}\n\n`,
     );
     res.end();
 
-    await upsertSessionTurn(session, { role: 'user', content: message });
+    // 🔑 Chain the updates so we don’t lose the user turn
+    session = await upsertSessionTurn(session, {
+      role: 'user',
+      content: message,
+    });
     await upsertSessionTurn(session, {
       role: 'assistant',
       content: fullAnswer,
       sources,
     });
   }
-  
-
 }
