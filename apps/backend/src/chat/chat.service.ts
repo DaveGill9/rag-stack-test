@@ -9,7 +9,6 @@ import {
   getRecentTurns,
   upsertSessionTurn,
   Session,
-  Turn,
 } from './session-store';
 
 const EMBEDDING_MODEL =
@@ -54,12 +53,10 @@ export class ChatService {
     const requestId = crypto.randomUUID();
     this.logger.log(`[${requestId}] Incoming message: "${message}"`);
 
-    let session: Session | null = getSession(sessionId);
+    let session: Session | null = await getSession(sessionId);
     if (!session) {
-      session = createSession();
-      this.logger.log(
-        `[${requestId}] Created new session ${session.id}`
-      );
+      session = await createSession();
+      this.logger.log(`[${requestId}] Created new session ${session.id}`);
     }
 
     const t0 = Date.now();
@@ -182,11 +179,8 @@ export class ChatService {
 
     const answer = chatRes.choices[0]?.message?.content ?? '';
 
-    upsertSessionTurn(session, {
-      role: 'user',
-      content: message,
-    });
-    const updatedSession = upsertSessionTurn(session, {
+    await upsertSessionTurn(session, { role: 'user', content: message });
+    const updatedSession = await upsertSessionTurn(session, {
       role: 'assistant',
       content: answer,
       sources,
@@ -223,8 +217,8 @@ export class ChatService {
     const requestId = crypto.randomUUID();
     this.logger.log(`[${requestId}] (stream) message: "${message}"`);
 
-    let session: Session | null = getSession(sessionId);
-    if (!session) session = createSession();
+    let session: Session | null = await getSession(sessionId);
+    if (!session) session = await createSession();
 
     const t0 = Date.now();
     const embeddingRes = await this.openai.embeddings.create({
@@ -263,12 +257,12 @@ export class ChatService {
       const safeAnswer =
         "I’m not confident I can answer that from the loaded documents.";
 
-      upsertSessionTurn(session, { role: 'user', content: message });
-      upsertSessionTurn(session, {
-        role: 'assistant',
-        content: safeAnswer,
-        sources: [],
-      });
+        await upsertSessionTurn(session, { role: 'user', content: message });
+        await upsertSessionTurn(session, {
+          role: 'assistant',
+          content: safeAnswer,
+          sources: [],
+        });
 
       res.write(
         `data: ${JSON.stringify({
@@ -370,8 +364,8 @@ export class ChatService {
     );
     res.end();
 
-    upsertSessionTurn(session, { role: 'user', content: message });
-    upsertSessionTurn(session, {
+    await upsertSessionTurn(session, { role: 'user', content: message });
+    await upsertSessionTurn(session, {
       role: 'assistant',
       content: fullAnswer,
       sources,
