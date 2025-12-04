@@ -14,9 +14,16 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sessions, setSessions] = useState<{ id: string; title: string }[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(() => {
     return localStorage.getItem('sessionId');
   });
+
+  const handleNewChat = () => {
+    setMessages([]);
+    setSessionId(null);
+    localStorage.removeItem("sessionId");
+  };
 
   useEffect(() => {
     const stored = localStorage.getItem('sessionId');
@@ -43,6 +50,15 @@ const App: React.FC = () => {
         console.error('Failed to restore session', err);
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    async function loadSessions() {
+      const resp = await fetch("http://localhost:3000/chat/sessions");
+      const list = await resp.json();
+      setSessions(list);
+    }
+    loadSessions;
   }, []);
 
   const handleSend = async (e?: React.FormEvent) => {
@@ -108,6 +124,11 @@ const App: React.FC = () => {
               setSessionId(event.sessionId);
               localStorage.setItem('sessionId', event.sessionId);
             }
+
+            fetch("http://localhost:3000/chat/sessions")
+            .then((res) => res.json())
+            .then((list) => setSessions(list));
+
             if (event.sources) {
               setMessages((prev) =>
                 prev.map((m) =>

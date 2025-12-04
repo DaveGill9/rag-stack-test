@@ -31,7 +31,7 @@ export class ChatController {
   }
 
   @Get('sessions')
-  async getAllSessions() {
+  async listSessions() {
     const col = await getSessionsCollection();
     const list = await col.find({}, { projection: { turns: 1, id: 1 } }).toArray();
     return list.map((s) => ({
