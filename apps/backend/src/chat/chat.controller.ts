@@ -30,8 +30,8 @@ export class ChatController {
   }
 
   @Get('session/:id')
-  getSessionHistory(@Param('id') id: string) {
-    const session = getSession(id);
+  async getSessionHistory(@Param('id') id: string) {
+    const session = await getSession(id);
     if (!session) {
       return { sessionId: id, turns: [] };
     }
