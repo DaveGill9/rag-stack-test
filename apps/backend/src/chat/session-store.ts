@@ -1,65 +1,81 @@
+// apps/backend/src/session-store.ts
 import crypto from 'crypto';
+import { getSessionsCollection } from 'src/mongo';
 
 export type Role = 'user' | 'assistant';
 
 export type Turn = {
-    role: Role;
-    content: string;
-    sources?: {
-        id: string;
-        score?: number;
-        metadata?: any;
-    }[];
-}
+  role: Role;
+  content: string;
+  sources?: {
+    id: string;
+    score?: number;
+    metadata?: any;
+  }[];
+};
 
 export type Session = {
-    id: string;
-    turns: Turn[];
-    createdAt: string;
-    updatedAt: string;
+  id: string;
+  turns: Turn[];
+  createdAt: string;
+  updatedAt: string; 
+};
+
+//Create a new session in Mongo
+export async function createSession(): Promise<Session> {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  const session: Session = {
+    id,
+    turns: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const col = await getSessionsCollection();
+  await col.insertOne(session);
+
+  return session;
 }
 
-export class SessionStore {
-    private sessions: Map<string, Session> = new Map();
+//Get an existing session from Mongo
+export async function getSession(id?: string | null): Promise<Session | null> {
+  if (!id) return null;
+  const col = await getSessionsCollection();
+  const session = await col.findOne({ id });
+  return session ?? null;
 }
 
-const sessions: Map<string, Session> = new Map();
+//Append a turn and write back to Mongo
+export async function upsertSessionTurn(
+  session: Session,
+  turn: Turn,
+): Promise<Session> {
+  const updated: Session = {
+    ...session,
+    turns: [...session.turns, turn],
+    updatedAt: new Date().toISOString(),
+  };
 
-export function createSession(): Session {
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-    const session: Session = {
-        id,
-        turns: [],
-        createdAt: now,
-        updatedAt: now,
-    };
-    sessions.set(id, session);
-    return session;
+  const col = await getSessionsCollection();
+  await col.updateOne(
+    { id: session.id },
+    {
+      $set: {
+        turns: updated.turns,
+        updatedAt: updated.updatedAt,
+      },
+    },
+    { upsert: true },
+  );
+
+  return updated;
 }
 
-export function getSession(id?: string | null): Session | null {
-    if (!id) return null;
-    const s = sessions.get(id);
-    return s ?? null;
-}
-
-export function upsertSessionTurn(
-    session: Session,
-    turn: Turn
-): Session {
-    const updated: Session = {
-        ...session,
-        turns: [...session.turns, turn],
-        updatedAt: new Date().toISOString(),
-    };
-    sessions.set(updated.id, updated);
-    return updated;
-}
-
+//Just slices the turns array in memory
 export function getRecentTurns(session: Session, n: number): Turn[] {
-    const { turns } = session;
-    if (turns.length <= n) return turns;
-    return turns.slice(turns.length - n);
+  const { turns } = session;
+  if (turns.length <= n) return turns;
+  return turns.slice(turns.length - n);
 }
-
