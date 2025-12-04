@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ChatService } from './chat.service';
 import { getSession } from './session-store';
+import { getSessionsCollection } from 'src/mongo';
 
 class ChatRequestDto {
   message: string;
@@ -29,6 +30,16 @@ export class ChatController {
     await this.chatService.generateAnswerStream(message, sessionId, res);
   }
 
+  @Get('sessions')
+  async getAllSessions() {
+    const col = await getSessionsCollection();
+    const list = await col.find({}, { projection: { turns: 1, id: 1 } }).toArray();
+    return list.map((s) => ({
+      id: s.id,
+      title:  s.turns[0]?.content?.slice(0,40) || "New Chat",
+    }));
+  }
+  
   @Get('session/:id')
   async getSessionHistory(@Param('id') id: string) {
     const session = await getSession(id);
