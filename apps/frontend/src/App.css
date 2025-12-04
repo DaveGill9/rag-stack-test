@@ -1,3 +1,4 @@
+/* ROOT + GLOBALS stay the same */
 #root {
   width: 100%;
   height: 100%;
@@ -17,6 +18,8 @@ body {
   background: #020617;
 }
 
+/* APP LAYOUT */
+
 .app {
   min-height: 100vh;
   display: flex;
@@ -27,7 +30,21 @@ body {
   padding: 24px;
 }
 
+/* When we have a sidebar, change layout to a row */
+.app.app--with-sidebar {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;   /* center whole strip */
+  align-items: stretch;      /* sidebar + chat full height */
+  gap: 24px;
+  background: #020617;
+  padding: 24px;
+}
+
+/* CHAT CARD */
+
 .chat-container {
+  flex: 1;
   width: 90%;
   max-width: 1000px;
   height: 85vh;
@@ -40,12 +57,79 @@ body {
   margin: auto;
 }
 
+/* Remove auto-centering when sidebar layout is active */
+.app.app--with-sidebar .chat-container {
+  margin: 0;
+}
+
+/* SIDEBAR */
+
+.sidebar {
+  width: 260px;
+  padding: 16px;
+  border-radius: 16px;
+  background: #020617;
+  border: 1px solid #1f2937;
+  display: flex;
+  flex-direction: column;
+  color: #e5e7eb;
+}
+
+.sidebar-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #e5e7eb;
+  opacity: 0.8;
+}
+
+.sidebar-new-chat {
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: none;
+  background: #22c55e;
+  color: #020617;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.sidebar-new-chat:hover {
+  background: #16a34a;
+}
+
+.sidebar-sessions {
+  flex: 1;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+.sidebar-session-item {
+  font-size: 0.9rem;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-bottom: 4px;
+  color: #e5e7eb;
+}
+
+.sidebar-session-item:hover {
+  background: #111827;
+}
+
+.sidebar-session-item--active {
+  background: #1f2937;
+  font-weight: 600;
+}
+
+/* MESSAGES + INPUT (unchanged) */
+
 .chat-title {
   margin: 0 0 16px;
   font-size: 24px;
   font-weight: 600;
 }
-
 
 .messages {
   flex: 1;
@@ -170,8 +254,17 @@ body {
 
 /* Small screens */
 @media (max-width: 640px) {
+  .app.app--with-sidebar {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    margin-bottom: 16px;
+  }
+
   .chat-container {
-    height: 90vh;
+    height: auto;
     padding: 16px;
   }
 
@@ -179,3 +272,4 @@ body {
     max-width: 100%;
   }
 }
+

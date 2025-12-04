@@ -166,17 +166,67 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="app">
+    <div className="app app--with-sidebar">
+      {/* SIDEBAR */}
+      <aside className="sidebar">
+        <h2 className="sidebar-title">Sessions</h2>
+  
+        <button
+          className="sidebar-new-chat"
+          type="button"
+          onClick={handleNewChat}
+        >
+          ➕ New Chat
+        </button>
+  
+        <div className="sidebar-sessions">
+          {sessions.map((s) => (
+            <div
+              key={s.id}
+              className={
+                'sidebar-session-item' +
+                (s.id === sessionId ? ' sidebar-session-item--active' : '')
+              }
+              onClick={() => {
+                // save selection
+                localStorage.setItem('sessionId', s.id);
+                setSessionId(s.id);
+  
+                // load turns for that session
+                fetch(`http://localhost:3000/chat/session/${s.id}`)
+                  .then((r) => r.json())
+                  .then((data) => {
+                    const turns = data.turns || [];
+                    const restored = turns.map((t: any, idx: number) => ({
+                      id: `${s.id}-${idx}`,
+                      role: t.role,
+                      content: t.content,
+                      sources: t.sources ?? [],
+                    }));
+                    setMessages(restored);
+                  })
+                  .catch((err) => {
+                    console.error('Failed to load session', err);
+                  });
+              }}
+            >
+              {s.title || 'New Chat'}
+            </div>
+          ))}
+        </div>
+      </aside>
+  
+      {/* MAIN CHAT AREA */}
       <div className="chat-container">
         <h1 className="chat-title">RAG Demo Chat</h1>
-
+  
         <div className="messages">
           {messages.length === 0 && (
             <div className="messages-empty">
               Ask a question about the documents you loaded…
             </div>
           )}
-
+  
           {messages.map((m) => (
             <div
               key={m.id}
@@ -187,40 +237,42 @@ const App: React.FC = () => {
               <div className="message-role">
                 {m.role === 'user' ? 'You' : 'Assistant'}
               </div>
-
+  
               <div className="message-content">{m.content}</div>
-
-              {m.role === 'assistant' && m.sources && m.sources.length > 0 && (
-                <div className="sources">
-                  <div className="sources-header">Sources:</div>
-                  <ul className="sources-list">
-                    {m.sources.map((s, idx) => (
-                      <li key={idx} className="sources-item">
-                        <strong>
-                          {s.metadata?.source_path ||
-                            s.metadata?.doc_id ||
-                            s.id}
-                        </strong>
-                        {s.metadata?.page_from != null &&
-                          s.metadata?.page_to != null && (
-                            <span>
-                              {' '}
-                              (pages {s.metadata.page_from}-
-                              {s.metadata.page_to})
-                            </span>
+  
+              {m.role === 'assistant' &&
+                m.sources &&
+                m.sources.length > 0 && (
+                  <div className="sources">
+                    <div className="sources-header">Sources:</div>
+                    <ul className="sources-list">
+                      {m.sources.map((s, idx) => (
+                        <li key={idx} className="sources-item">
+                          <strong>
+                            {s.metadata?.source_path ||
+                              s.metadata?.doc_id ||
+                              s.id}
+                          </strong>
+                          {s.metadata?.page_from != null &&
+                            s.metadata?.page_to != null && (
+                              <span>
+                                {' '}
+                                (pages {s.metadata.page_from}-
+                                {s.metadata.page_to})
+                              </span>
+                            )}
+                          {s.score != null && (
+                            <span> — score: {s.score.toFixed(3)}</span>
                           )}
-                        {s.score != null && (
-                          <span> — score: {s.score.toFixed(3)}</span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
             </div>
           ))}
         </div>
-
+  
         <form className="input-row" onSubmit={handleSend}>
           <input
             className="input"
