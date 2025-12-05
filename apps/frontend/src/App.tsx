@@ -137,12 +137,22 @@ const App: React.FC = () => {
               );
             }
           } else if (event.type === 'token') {
-            const token: string = event.content ?? '';
-            if (!token) continue;
+            let chunk: string = event.content ?? '';
+            if (!chunk) continue;
+          
+            if (event.encoding === 'base64') {
+              try {
+                chunk = atob(chunk);
+              } catch (e) {
+                console.error("Base64 decode failed:", e);
+                continue;
+              }
+            }
+          
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId
-                  ? { ...m, content: m.content + token }
+                  ? { ...m, content: m.content + chunk }
                   : m
               )
             );
