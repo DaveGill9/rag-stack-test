@@ -58,7 +58,7 @@ const App: React.FC = () => {
       const list = await resp.json();
       setSessions(list);
     }
-    loadSessions;
+    loadSessions();
   }, []);
 
   const handleSend = async (e?: React.FormEvent) => {
