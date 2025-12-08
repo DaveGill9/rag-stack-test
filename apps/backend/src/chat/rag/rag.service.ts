@@ -55,9 +55,11 @@ export class RagService {
       throw new Error('Message is required');
     }
 
+    const retrievalQuery = this.buildRetrievalQuery(message, recentTurns);
+
     const embeddingRes = await this.openai.embeddings.create({
       model: EMBEDDING_MODEL,
-      input: message,
+      input: retrievalQuery,
     });
 
     const queryVector = embeddingRes.data[0].embedding;
@@ -135,9 +137,10 @@ export class RagService {
       return;
     }
 
+    const retrievalQuery = this.buildRetrievalQuery(message, recentTurns);
     const embeddingRes = await this.openai.embeddings.create({
       model: EMBEDDING_MODEL,
-      input: message,
+      input: retrievalQuery,
     });
 
     const queryVector = embeddingRes.data[0].embedding;
@@ -209,6 +212,27 @@ export class RagService {
     }
 
     yield { type: 'done', content: fullAnswer };
+  }
+
+  private buildRetrievalQuery(
+    message: string,
+    recentTurns: { role: 'user' | 'assistant'; content: string}[],
+  ): string {
+
+    const lastTurns = recentTurns.slice(-6);
+    const historyText = lastTurns.map((t) => 
+      t.role === 'user'
+        ? 'User: ${t.content}'
+        : 'Assistant: ${t.content}'
+    ).join('\n');
+
+    return `
+      Conversation history:
+      ${historyText}
+      
+      Current question:
+      ${message}
+      `.trim();
   }
 
   private buildContextBlocks(matches: any[]): string {
