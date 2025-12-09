@@ -1,6 +1,6 @@
 // apps/backend/src/session-store.ts
 import crypto from 'crypto';
-import { getSessionsCollection } from 'src/mongo';
+import { getSessionsCollection } from 'src/config/mongo';
 
 export type Role = 'user' | 'assistant';
 

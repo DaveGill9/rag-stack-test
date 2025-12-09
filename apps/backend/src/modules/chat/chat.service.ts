@@ -7,7 +7,7 @@ import {
   upsertSessionTurn,
   Session,
 } from './session-store';
-import { RagService } from './rag/rag.service';
+import { RagService } from '../rag/rag.service';
 
 @Injectable()
 export class ChatService {

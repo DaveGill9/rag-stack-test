@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ChatService } from './chat.service';
 import { getSession } from './session-store';
-import { getSessionsCollection } from 'src/mongo';
+import { getSessionsCollection } from 'src/config/mongo';
 
 class ChatRequestDto {
   message: string;
