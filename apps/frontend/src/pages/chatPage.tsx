@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import '../styles/App.css';
+import '../styles/global.css';
 
 type Message = {
   id: string;
