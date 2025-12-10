@@ -10,7 +10,7 @@ type Message = {
 
 const BACKEND_STREAM_URL = 'http://localhost:3000/chat/stream';
 
-const App: React.FC = () => {
+const ChatPage: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -65,15 +65,15 @@ const App: React.FC = () => {
     e?.preventDefault();
     const trimmed = input.trim();
     if (!trimmed || loading) return;
-  
+
     const userMsg: Message = {
       id: crypto.randomUUID(),
       role: 'user',
       content: trimmed,
     };
-  
+
     const assistantId = crypto.randomUUID();
-  
+
     setMessages((prev) => [
       ...prev,
       userMsg,
@@ -84,41 +84,41 @@ const App: React.FC = () => {
         sources: [],
       },
     ]);
-  
+
     setInput('');
     setLoading(true);
-  
+
     try {
       const resp = await fetch(BACKEND_STREAM_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: trimmed, sessionId }),
       });
-  
+
       if (!resp.body) {
         throw new Error('No response body');
       }
-  
+
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
-  
+
       let done = false;
-  
+
       while (!done) {
         const { value, done: streamDone } = await reader.read();
         if (streamDone) break;
         const chunkText = decoder.decode(value, { stream: true });
-  
+
         const lines = chunkText
           .split('\n')
           .map((l) => l.trim())
           .filter((l) => l.startsWith('data:'));
-  
+
         for (const line of lines) {
           const jsonStr = line.replace(/^data:\s*/, '');
           if (!jsonStr) continue;
           const event = JSON.parse(jsonStr);
-  
+
           if (event.type === 'meta') {
             if (event.sessionId && event.sessionId !== sessionId) {
               setSessionId(event.sessionId);
@@ -126,8 +126,8 @@ const App: React.FC = () => {
             }
 
             fetch("http://localhost:3000/chat/sessions")
-            .then((res) => res.json())
-            .then((list) => setSessions(list));
+              .then((res) => res.json())
+              .then((list) => setSessions(list));
 
             if (event.sources) {
               setMessages((prev) =>
@@ -139,7 +139,7 @@ const App: React.FC = () => {
           } else if (event.type === 'token') {
             let chunk: string = event.content ?? '';
             if (!chunk) continue;
-          
+
             if (event.encoding === 'base64') {
               try {
                 chunk = atob(chunk);
@@ -148,7 +148,7 @@ const App: React.FC = () => {
                 continue;
               }
             }
-          
+
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId
@@ -180,7 +180,7 @@ const App: React.FC = () => {
       {/* SIDEBAR */}
       <aside className="sidebar">
         <h2 className="sidebar-title">Sessions</h2>
-  
+
         <button
           className="sidebar-new-chat"
           type="button"
@@ -188,7 +188,7 @@ const App: React.FC = () => {
         >
           ➕ New Chat
         </button>
-  
+
         <div className="sidebar-sessions">
           {sessions.map((s) => (
             <div
@@ -201,7 +201,7 @@ const App: React.FC = () => {
                 // save selection
                 localStorage.setItem('sessionId', s.id);
                 setSessionId(s.id);
-  
+
                 // load turns for that session
                 fetch(`http://localhost:3000/chat/session/${s.id}`)
                   .then((r) => r.json())
@@ -225,31 +225,30 @@ const App: React.FC = () => {
           ))}
         </div>
       </aside>
-  
+
       {/* MAIN CHAT AREA */}
       <div className="chat-container">
         <h1 className="chat-title">RAG Demo Chat</h1>
-  
+
         <div className="messages">
           {messages.length === 0 && (
             <div className="messages-empty">
               Ask a question about the documents you loaded…
             </div>
           )}
-  
+
           {messages.map((m) => (
             <div
               key={m.id}
-              className={`message ${
-                m.role === 'user' ? 'message--user' : 'message--assistant'
-              }`}
+              className={`message ${m.role === 'user' ? 'message--user' : 'message--assistant'
+                }`}
             >
               <div className="message-role">
                 {m.role === 'user' ? 'You' : 'Assistant'}
               </div>
-  
+
               <div className="message-content">{m.content}</div>
-  
+
               {m.role === 'assistant' &&
                 m.sources &&
                 m.sources.length > 0 && (
@@ -282,7 +281,7 @@ const App: React.FC = () => {
             </div>
           ))}
         </div>
-  
+
         <form className="input-row" onSubmit={handleSend}>
           <input
             className="input"
@@ -299,4 +298,4 @@ const App: React.FC = () => {
   );
 };
 
-export default App;
+export default ChatPage;
