@@ -1,5 +1,5 @@
 import { MongoClient, Db, Collection } from 'mongodb';
-import type { Session } from './modules/chat/session-store';
+import type { Session } from '../modules/chat/session-store';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
