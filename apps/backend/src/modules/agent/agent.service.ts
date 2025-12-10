@@ -32,12 +32,15 @@ export class AgentService {
     const { message, history = [] } = args;
 
     const baseMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      {
-        role: 'system',
-        content:
-          'You are an assistant that can use tools such as web_search when needed. ' +
-          'Use tools for fresh / web-based information or when you lack enough knowledge.',
-      },
+        {
+            role: 'system',
+            content:
+              'You are an assistant with access to function tools.\n' +
+              '- Use `rag_query` to look up information in the local knowledge base (PDFs, documents, internal content, lab sheets, etc).\n' +
+              '- Use `web_search` ONLY for up-to-date or web-based information (news, weather, very recent events, things not in the local docs).\n' +
+              '- Prefer `rag_query` when the user asks about known documents or material that could plausibly be in the indexed knowledge base.\n' +
+              '- Do NOT guess when you can use a tool; call the tool, inspect the results, then answer.\n',
+        },
       ...history.map((t) => ({
         role: t.role,
         content: t.content,

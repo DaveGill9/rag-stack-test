@@ -1,0 +1,69 @@
+import { RagService, RagSource } from '../rag/rag.service';
+import { Tool } from './tool.types';
+
+function formatSourceForLLM(source: RagSource, index: number): string {
+  const meta = source.metadata || {};
+  const title = meta.title || meta.filename || source.id;
+  const page = meta.page ?? meta.pages ?? undefined;
+  const score = source.score?.toFixed(3);
+
+  const headerParts = [
+    `Result ${index + 1}`,
+    `ID: ${source.id}`,
+    title ? `Title: ${title}` : null,
+    page !== undefined ? `Page(s): ${page}` : null,
+    score ? `Score: ${score}` : null,
+  ].filter(Boolean);
+
+  const snippet =
+    meta.text ||
+    meta.content ||
+    meta.chunk ||
+    '[No text snippet available in metadata]';
+
+  return `${headerParts.join(' | ')}\n\n${snippet}\n`;
+}
+
+export function createRagQueryTool(ragService: RagService): Tool<{ query: string }> {
+  return {
+    definition: {
+      name: 'rag_query',
+      description:
+        'Retrieve relevant passages from the local knowledge base (indexed in Pinecone). ' +
+        'Use this instead of web_search for questions about documents, PDFs, or internal knowledge.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description:
+              'The semantic search query. Include as much context from the user question as needed.',
+          },
+        },
+        required: ['query'],
+      },
+    },
+
+    async execute({ query }) {
+      const sources = await ragService.retrieveContexts({ query, topK: 5 });
+
+      console.log('[rag_query] query:', query);
+      console.log('[rag_query] sources length:', sources.length);
+      console.log('[rag_query] first source metadata:', sources[0]?.metadata);
+
+      if (!sources.length) {
+        return `No relevant RAG results found for query: "${query}".`;
+      }
+
+      const formatted = sources
+        .map((s, i) => formatSourceForLLM(s, i))
+        .join('\n-------------------------\n\n');
+
+      return (
+        `RAG query results for: "${query}"\n\n` +
+        formatted +
+        `\n\nYou MUST base your answer on these passages when relevant. `
+      );
+    },
+  };
+}

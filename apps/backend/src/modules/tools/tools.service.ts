@@ -2,13 +2,15 @@ import { Injectable } from '@nestjs/common';
 import OpenAI from 'openai';
 import { Tool } from './tool.types';
 import { createWebSearchTool } from './web-search.tool';
+import { RagService } from '../rag/rag.service';
+import { createRagQueryTool } from './rag-query.tool';
 
 @Injectable()
 export class ToolsService {
   private readonly openai: OpenAI;
   private readonly tools: Tool[];
 
-  constructor() {
+  constructor(private readonly ragService: RagService) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       throw new Error('OPENAI_API_KEY is not set');
@@ -16,9 +18,9 @@ export class ToolsService {
 
     this.openai = new OpenAI({ apiKey });
 
-    // Register tools here
     this.tools = [
-      createWebSearchTool(this.openai),
+      createWebSearchTool(this.openai),       
+      createRagQueryTool(this.ragService),      
     ];
   }
 

@@ -214,17 +214,49 @@ export class RagService {
     yield { type: 'done', content: fullAnswer };
   }
 
+  async retrieveContexts(opts: { query: string; topK?: number }): Promise<RagSource[]> {
+    const { query, topK = 5 } = opts;
+  
+    const embeddingRes = await this.openai.embeddings.create({
+      model: EMBEDDING_MODEL,
+      input: query,
+    });
+  
+    const vector = embeddingRes.data[0].embedding;
+  
+    const index = this.pinecone.index(PINECONE_INDEX);
+    const ns = index.namespace(PINECONE_NAMESPACE);
+  
+    const queryRes = await ns.query({
+      topK,
+      vector,
+      includeMetadata: true,
+    });
+  
+    const matches = queryRes.matches ?? [];
+  
+    const sources: RagSource[] = matches.map((m) => ({
+      id: m.id!,
+      score: m.score,
+      metadata: m.metadata,
+    }));
+  
+    return sources;
+  }
+
   private buildRetrievalQuery(
     message: string,
     recentTurns: { role: 'user' | 'assistant'; content: string}[],
   ): string {
 
     const lastTurns = recentTurns.slice(-6);
-    const historyText = lastTurns.map((t) => 
+    const historyText = lastTurns
+    .map((t) =>
       t.role === 'user'
-        ? 'User: ${t.content}'
-        : 'Assistant: ${t.content}'
-    ).join('\n');
+        ? `User: ${t.content}`
+        : `Assistant: ${t.content}`
+    )
+    .join('\n');
 
     return `
       Conversation history:
