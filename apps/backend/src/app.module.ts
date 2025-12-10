@@ -12,4 +12,4 @@ import { AgentModule } from './modules/agent/agent.module';
     AgentModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }

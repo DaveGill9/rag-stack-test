@@ -11,7 +11,7 @@ class ChatRequestDto {
 
 @Controller('chat')
 export class ChatController {
-  constructor(private readonly chatService: ChatService) {}
+  constructor(private readonly chatService: ChatService) { }
 
   @Post()
   async chat(@Body() body: ChatRequestDto) {
@@ -36,10 +36,10 @@ export class ChatController {
     const list = await col.find({}, { projection: { turns: 1, id: 1 } }).toArray();
     return list.map((s) => ({
       id: s.id,
-      title:  s.turns[0]?.content?.slice(0,40) || "New Chat",
+      title: s.turns[0]?.content?.slice(0, 40) || "New Chat",
     }));
   }
-  
+
   @Get('session/:id')
   async getSessionHistory(@Param('id') id: string) {
     const session = await getSession(id);

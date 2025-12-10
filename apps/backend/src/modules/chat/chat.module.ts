@@ -8,4 +8,4 @@ import { RagModule } from '../rag/rag.module';
   controllers: [ChatController],
   providers: [ChatService],
 })
-export class ChatModule {}
+export class ChatModule { }

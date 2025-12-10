@@ -4,8 +4,8 @@ import { AgentController } from './agent.controller';
 import { ToolsModule } from '../tools/tools.module';
 
 @Module({
-  imports: [ToolsModule],
-  providers: [AgentService],
-  controllers: [AgentController],
+    imports: [ToolsModule],
+    providers: [AgentService],
+    controllers: [AgentController],
 })
-export class AgentModule {}
+export class AgentModule { }

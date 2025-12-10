@@ -5,4 +5,4 @@ import { RagService } from './rag.service';
   providers: [RagService],
   exports: [RagService],
 })
-export class RagModule {}
+export class RagModule { }

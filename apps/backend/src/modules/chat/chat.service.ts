@@ -13,7 +13,7 @@ import { RagService } from '../rag/rag.service';
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
 
-  constructor(private readonly rag: RagService) {}
+  constructor(private readonly rag: RagService) { }
 
   async generateAnswer(message: string, sessionId?: string | null) {
     if (!message || !message.trim()) {
@@ -119,7 +119,7 @@ export class ChatService {
               encoding: 'base64',
             })}\n\n`
           );
-          
+
         } else if (event.type === 'done') {
           res.write(
             `data: ${JSON.stringify({

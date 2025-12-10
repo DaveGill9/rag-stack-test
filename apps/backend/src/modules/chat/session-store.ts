@@ -18,7 +18,7 @@ export type Session = {
   id: string;
   turns: Turn[];
   createdAt: string;
-  updatedAt: string; 
+  updatedAt: string;
 };
 
 //Create a new session in Mongo
