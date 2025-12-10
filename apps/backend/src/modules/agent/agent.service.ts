@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import OpenAI from 'openai';
 import { ToolsService } from '../tools/tools.service';
-import { RagSource } from '../rag/rag.service'; // <-- add this
+import { RagSource } from '../rag/rag.service';
 
 type Role = 'user' | 'assistant' | 'system';
 
@@ -28,7 +28,7 @@ export class AgentService {
     async runAgent(args: {
         message: string;
         history?: AgentTurn[];
-    }): Promise<{ answer: string; sources: RagSource[] }> {
+    }): Promise<{ answer: string; sources: any[] }> {
         const { message, history = [] } = args;
 
         const baseMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -50,7 +50,6 @@ export class AgentService {
 
         const tools = this.toolsService.getToolDefinitions();
 
-        // 1) First call
         const first = await this.openai.chat.completions.create({
             model: this.model,
             messages: baseMessages,
@@ -61,7 +60,6 @@ export class AgentService {
         const firstChoice = first.choices[0];
         const toolCalls = firstChoice.message.tool_calls;
 
-        // If no tools used, just return the answer
         if (!toolCalls || toolCalls.length === 0) {
             return {
                 answer: firstChoice.message.content ?? '',
@@ -69,7 +67,6 @@ export class AgentService {
             };
         }
 
-        // 2) Execute requested tools
         const toolMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
         let aggregatedSources: RagSource[] = [];
 
@@ -93,11 +90,14 @@ export class AgentService {
 
             let contentForLLM = rawResult;
 
-            // Try to decode the special JSON format from rag_query
             try {
                 const maybeJson = JSON.parse(rawResult);
 
-                if (maybeJson && maybeJson.__rag_type === 'rag_query_result') {
+                if (
+                    maybeJson &&
+                    (maybeJson.__rag_type === 'rag_query_result' ||
+                        maybeJson.__rag_type === 'web_query_result')
+                ) {
                     if (Array.isArray(maybeJson.sources)) {
                         aggregatedSources = aggregatedSources.concat(maybeJson.sources);
                     }
@@ -105,9 +105,7 @@ export class AgentService {
                         contentForLLM = maybeJson.content;
                     }
                 }
-            } catch {
-                // rawResult was not JSON; leave contentForLLM as-is
-            }
+            } catch {}
 
             toolMessages.push({
                 role: 'tool',
@@ -116,7 +114,6 @@ export class AgentService {
             });
         }
 
-        // 3) Second call with tool results
         const second = await this.openai.chat.completions.create({
             model: this.model,
             messages: [...baseMessages, firstChoice.message, ...toolMessages],
