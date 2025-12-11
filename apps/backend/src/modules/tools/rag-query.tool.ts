@@ -64,7 +64,10 @@ export function createRagQueryTool(
             const content =
                 `RAG query results for: "${query}"\n\n` +
                 formatted +
-                `\n\nYou MUST base your answer on these passages when relevant.`;
+                `\n\nGuidance for using these results:\n` +
+                '- Prefer these passages when they clearly relate to the user’s question.\n' +
+                '- If they seem unrelated or only weakly relevant, you may ignore them and answer from your general knowledge instead.\n' +
+                '- Only cite these results as "Sources" if they actually support or inform your answer.\n';
 
             return JSON.stringify({
                 __rag_type: 'rag_query_result',

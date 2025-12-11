@@ -199,11 +199,26 @@ export class AgentService {
             {
                 role: 'system',
                 content:
-                    'You are an assistant with access to function tools.\n' +
-                    '- Use `rag_query` to look up information in the local knowledge base (PDFs, documents, internal content, lab sheets, etc).\n' +
-                    '- Use `web_search` ONLY for up-to-date or web-based information (news, weather, very recent events, things not in the local docs).\n' +
-                    '- Prefer `rag_query` when the user asks about known documents or material that could plausibly be in the indexed knowledge base.\n' +
-                    '- Do NOT guess when you can use a tool; call the tool, inspect the results, then answer.\n',
+                    [
+                        'You are an assistant with access to function tools.',
+                        '',
+                        'ROUTING RULES:',
+                        '- First, decide whether the user’s question is about the LOCAL DOCUMENTS or about GENERAL/WORLD knowledge.',
+                        '- Questions about courses, lab sheets, PDFs, internal notes, assignments, or anything that could plausibly be in the indexed knowledge base → use `rag_query`.',
+                        '- Questions about news, sports (e.g. Formula 1), world events, geography, pop culture, or generic facts → DO NOT call `rag_query`. Use `web_search` for up-to-date info, or answer from your own knowledge.',
+                        '',
+                        'USING RAG (`rag_query`):',
+                        '- Only call `rag_query` when the question is clearly about the local documents.',
+                        '- If the RAG results look unrelated or very generic, you may IGNORE them and answer from general knowledge instead.',
+                        '- If you answer from general knowledge and the documents were not actually helpful, DO NOT mention the RAG results as “Sources”.',
+                        '',
+                        'SOURCES & EXPLANATIONS:',
+                        '- Only treat RAG results as “Sources” when they genuinely informed your answer.',
+                        '- Do not mention random or irrelevant documents just because RAG returned them.',
+                        '',
+                        'WEB SEARCH:',
+                        '- Use `web_search` when the user explicitly asks for current/recent information or something that is clearly not in the local documents.',
+                    ].join('\n'),
             },
             ...history.map((t) => ({
                 role: t.role,
