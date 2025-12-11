@@ -1,12 +1,9 @@
+// src/pages/chatPage.tsx
 import React, { useEffect, useState } from 'react';
-import '../styles/global.css';
 
-type Message = {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  sources?: any[];
-};
+import Sidebar from '../components/Sidebar';
+import ChatWindow from '../components/chatWindow';
+import type { Message, SessionSummary } from '../lib/chatTypes';
 
 const BACKEND_STREAM_URL = 'http://localhost:3000/chat/stream';
 
@@ -14,7 +11,7 @@ const ChatPage: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [sessions, setSessions] = useState<{ id: string; title: string }[]>([]);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(() => {
     return localStorage.getItem('sessionId');
   });
@@ -22,44 +19,66 @@ const ChatPage: React.FC = () => {
   const handleNewChat = () => {
     setMessages([]);
     setSessionId(null);
-    localStorage.removeItem("sessionId");
+    localStorage.removeItem('sessionId');
   };
 
+  // helper to load one session's turns
+  const loadSessionById = async (id: string) => {
+    const resp = await fetch(`http://localhost:3000/chat/session/${id}`);
+    if (!resp.ok) return;
+
+    const data = await resp.json();
+    const turns = data.turns || [];
+
+    const restored: Message[] = turns.map((t: any, idx: number) => ({
+      id: `${id}-${idx}`,
+      role: t.role,
+      content: t.content,
+      sources: t.sources ?? [],
+    }));
+
+    setMessages(restored);
+  };
+
+  // restore last session on initial load
   useEffect(() => {
     const stored = localStorage.getItem('sessionId');
     if (!stored) return;
 
     (async () => {
       try {
-        const resp = await fetch(`http://localhost:3000/chat/session/${stored}`);
-        if (!resp.ok) return;
-
-        const data = await resp.json();
-        const turns = data.turns || [];
-
-        const restoredMessages: Message[] = turns.map((t: any, idx: number) => ({
-          id: `${data.sessionId}-${idx}`,
-          role: t.role,
-          content: t.content,
-          sources: t.sources ?? [],
-        }));
-
-        setMessages(restoredMessages);
-        setSessionId(data.sessionId);
+        await loadSessionById(stored);
+        setSessionId(stored);
       } catch (err) {
         console.error('Failed to restore session', err);
       }
     })();
   }, []);
 
+  // load session list on mount
   useEffect(() => {
     async function loadSessions() {
-      const resp = await fetch("http://localhost:3000/chat/sessions");
-      const list = await resp.json();
-      setSessions(list);
+      try {
+        const resp = await fetch('http://localhost:3000/chat/sessions');
+        const list = await resp.json();
+        setSessions(list);
+      } catch (err) {
+        console.error('Failed to load sessions', err);
+      }
     }
     loadSessions();
   }, []);
+
+  // selecting a session from the sidebar
+  const handleSelectSession = async (id: string) => {
+    localStorage.setItem('sessionId', id);
+    setSessionId(id);
+    try {
+      await loadSessionById(id);
+    } catch (err) {
+      console.error('Failed to load session', err);
+    }
+  };
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -107,6 +126,7 @@ const ChatPage: React.FC = () => {
       while (!done) {
         const { value, done: streamDone } = await reader.read();
         if (streamDone) break;
+
         const chunkText = decoder.decode(value, { stream: true });
 
         const lines = chunkText
@@ -125,7 +145,8 @@ const ChatPage: React.FC = () => {
               localStorage.setItem('sessionId', event.sessionId);
             }
 
-            fetch("http://localhost:3000/chat/sessions")
+            // refresh session list
+            fetch('http://localhost:3000/chat/sessions')
               .then((res) => res.json())
               .then((list) => setSessions(list));
 
@@ -144,7 +165,7 @@ const ChatPage: React.FC = () => {
               try {
                 chunk = atob(chunk);
               } catch (e) {
-                console.error("Base64 decode failed:", e);
+                console.error('Base64 decode failed:', e);
                 continue;
               }
             }
@@ -177,123 +198,20 @@ const ChatPage: React.FC = () => {
 
   return (
     <div className="app app--with-sidebar">
-      {/* SIDEBAR */}
-      <aside className="sidebar">
-        <h2 className="sidebar-title">Sessions</h2>
+      <Sidebar
+        sessions={sessions}
+        activeSessionId={sessionId}
+        onNewChat={handleNewChat}
+        onSelectSession={handleSelectSession}
+      />
 
-        <button
-          className="sidebar-new-chat"
-          type="button"
-          onClick={handleNewChat}
-        >
-          ➕ New Chat
-        </button>
-
-        <div className="sidebar-sessions">
-          {sessions.map((s) => (
-            <div
-              key={s.id}
-              className={
-                'sidebar-session-item' +
-                (s.id === sessionId ? ' sidebar-session-item--active' : '')
-              }
-              onClick={() => {
-                // save selection
-                localStorage.setItem('sessionId', s.id);
-                setSessionId(s.id);
-
-                // load turns for that session
-                fetch(`http://localhost:3000/chat/session/${s.id}`)
-                  .then((r) => r.json())
-                  .then((data) => {
-                    const turns = data.turns || [];
-                    const restored = turns.map((t: any, idx: number) => ({
-                      id: `${s.id}-${idx}`,
-                      role: t.role,
-                      content: t.content,
-                      sources: t.sources ?? [],
-                    }));
-                    setMessages(restored);
-                  })
-                  .catch((err) => {
-                    console.error('Failed to load session', err);
-                  });
-              }}
-            >
-              {s.title || 'New Chat'}
-            </div>
-          ))}
-        </div>
-      </aside>
-
-      {/* MAIN CHAT AREA */}
-      <div className="chat-container">
-        <h1 className="chat-title">RAG Demo Chat</h1>
-
-        <div className="messages">
-          {messages.length === 0 && (
-            <div className="messages-empty">
-              Ask a question about the documents you loaded…
-            </div>
-          )}
-
-          {messages.map((m) => (
-            <div
-              key={m.id}
-              className={`message ${m.role === 'user' ? 'message--user' : 'message--assistant'
-                }`}
-            >
-              <div className="message-role">
-                {m.role === 'user' ? 'You' : 'Assistant'}
-              </div>
-
-              <div className="message-content">{m.content}</div>
-
-              {m.role === 'assistant' &&
-                m.sources &&
-                m.sources.length > 0 && (
-                  <div className="sources">
-                    <div className="sources-header">Sources:</div>
-                    <ul className="sources-list">
-                      {m.sources.map((s, idx) => (
-                        <li key={idx} className="sources-item">
-                          <strong>
-                            {s.metadata?.source_path ||
-                              s.metadata?.doc_id ||
-                              s.id}
-                          </strong>
-                          {s.metadata?.page_from != null &&
-                            s.metadata?.page_to != null && (
-                              <span>
-                                {' '}
-                                (pages {s.metadata.page_from}-
-                                {s.metadata.page_to})
-                              </span>
-                            )}
-                          {s.score != null && (
-                            <span> — score: {s.score.toFixed(3)}</span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-            </div>
-          ))}
-        </div>
-
-        <form className="input-row" onSubmit={handleSend}>
-          <input
-            className="input"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask something..."
-          />
-          <button className="button" type="submit" disabled={loading}>
-            {loading ? 'Thinking…' : 'Send'}
-          </button>
-        </form>
-      </div>
+      <ChatWindow
+        messages={messages}
+        input={input}
+        loading={loading}
+        onInputChange={setInput}
+        onSend={handleSend}
+      />
     </div>
   );
 };
