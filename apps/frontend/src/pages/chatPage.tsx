@@ -1,7 +1,6 @@
-// src/pages/chatPage.tsx
 import React, { useEffect, useState } from 'react';
 
-import Sidebar from '../components/Sidebar';
+import Sidebar from '../components/sidebar';
 import ChatWindow from '../components/chatWindow';
 import type { Message, SessionSummary } from '../lib/chatTypes';
 
