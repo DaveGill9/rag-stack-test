@@ -9,6 +9,8 @@ type ChatWindowProps = {
     onSend: (e?: React.FormEvent) => void;
 };
 
+const MAX_SOURCES = 5;
+
 const ChatWindow: React.FC<ChatWindowProps> = ({
     messages,
     input,
@@ -40,31 +42,77 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                         <div className="message-content">{m.content}</div>
 
                         {m.role === 'assistant' &&
-                            m.sources &&
+                            Array.isArray(m.sources) &&
                             m.sources.length > 0 && (
                                 <div className="sources">
                                     <div className="sources-header">Sources:</div>
                                     <ul className="sources-list">
-                                        {m.sources.map((s: any, idx: number) => (
-                                            <li key={idx} className="sources-item">
-                                                <strong>
-                                                    {s.metadata?.source_path ||
-                                                        s.metadata?.doc_id ||
-                                                        s.id}
-                                                </strong>
-                                                {s.metadata?.page_from != null &&
-                                                    s.metadata?.page_to != null && (
-                                                        <span>
-                                                            {' '}
-                                                            (pages {s.metadata.page_from}-
-                                                            {s.metadata.page_to})
-                                                        </span>
+                                        {m.sources.slice(0, MAX_SOURCES).map((s: any, idx: number) => {
+                                            const meta = s.metadata ?? {};
+
+                                            const isRag =
+                                                meta.source_path ||
+                                                meta.doc_id ||
+                                                meta.title ||
+                                                meta.filename;
+
+                                            if (isRag) {
+                                                const title =
+                                                    meta.source_path ||
+                                                    meta.doc_id ||
+                                                    meta.title ||
+                                                    meta.filename ||
+                                                    s.id ||
+                                                    `Source ${idx + 1}`;
+
+                                                const hasPages =
+                                                    meta.page_from != null &&
+                                                    meta.page_to != null;
+
+                                                const scoreText =
+                                                    typeof s.score === 'number'
+                                                        ? ` — score: ${s.score.toFixed(3)}`
+                                                        : '';
+
+                                                return (
+                                                    <li key={idx} className="sources-item">
+                                                        <strong>{title}</strong>
+
+                                                        {hasPages && (
+                                                            <span>
+                                                                {' '}
+                                                                (pages {meta.page_from}-{meta.page_to})
+                                                            </span>
+                                                        )}
+
+                                                        {scoreText && <span>{scoreText}</span>}
+                                                    </li>
+                                                );
+                                            }
+
+                                            const url = s.url || meta.url;
+                                            const label =
+                                                s.title ||
+                                                url ||
+                                                s.id ||
+                                                `Source ${idx + 1}`;
+
+                                            return (
+                                                <li key={idx} className="sources-item">
+                                                    {url ? (
+                                                        <a
+                                                            href={url}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                        >
+                                                            <strong>{label}</strong>
+                                                        </a>
+                                                    ) : (
+                                                        <strong>{label}</strong>
                                                     )}
-                                                {s.score != null && (
-                                                    <span> — score: {s.score.toFixed(3)}</span>
-                                                )}
-                                            </li>
-                                        ))}
+                                                </li>
+                                            );
+                                        })}
                                     </ul>
                                 </div>
                             )}

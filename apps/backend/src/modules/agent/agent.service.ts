@@ -144,7 +144,6 @@ export class AgentService {
             throw new Error('Message is required');
         }
 
-        // 1) Load or create session
         let session: Session | null = null;
 
         if (sessionId) {
@@ -155,21 +154,18 @@ export class AgentService {
             session = await createSession();
         }
 
-        // 2) Build history for the agent from recent turns
         const recentTurns = getRecentTurns(session, 6);
 
         const history = recentTurns.map((t) => ({
-            role: t.role as Role,      // 'user' | 'assistant'
+            role: t.role as Role,
             content: t.content,
         }));
 
-        // 3) Call existing agent logic
         const { answer, sources } = await this.runAgent({
             message,
             history,
         });
 
-        // 4) Persist both user and assistant turns back into the session
         session = await upsertSessionTurn(session, {
             role: 'user',
             content: message,
@@ -181,7 +177,6 @@ export class AgentService {
             sources,
         });
 
-        // 5) Return sessionId so frontend can keep track
         return {
             sessionId: session.id,
             answer,
