@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-
 import Sidebar from '../components/sidebar';
 import ChatWindow from '../components/chatWindow';
 import type { Message, SessionSummary } from '../lib/chatTypes';
 
-const AGENT_CHAT_URL = 'http://localhost:3000/agent/chat';
+const BACKEND_STREAM_URL = 'http://localhost:3000/agent/chat/stream';
 
 const ChatPage: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -21,7 +20,6 @@ const ChatPage: React.FC = () => {
     localStorage.removeItem('sessionId');
   };
 
-  // helper to load one session's turns
   const loadSessionById = async (id: string) => {
     const resp = await fetch(`http://localhost:3000/chat/session/${id}`);
     if (!resp.ok) return;
@@ -39,7 +37,6 @@ const ChatPage: React.FC = () => {
     setMessages(restored);
   };
 
-  // restore last session on initial load
   useEffect(() => {
     const stored = localStorage.getItem('sessionId');
     if (!stored) return;
@@ -54,7 +51,6 @@ const ChatPage: React.FC = () => {
     })();
   }, []);
 
-  // load session list on mount
   useEffect(() => {
     async function loadSessions() {
       try {
@@ -68,7 +64,6 @@ const ChatPage: React.FC = () => {
     loadSessions();
   }, []);
 
-  // selecting a session from the sidebar
   const handleSelectSession = async (id: string) => {
     localStorage.setItem('sessionId', id);
     setSessionId(id);
@@ -84,60 +79,112 @@ const ChatPage: React.FC = () => {
     const trimmed = input.trim();
     if (!trimmed || loading) return;
 
-    // add user message immediately
     const userMsg: Message = {
       id: crypto.randomUUID(),
       role: 'user',
       content: trimmed,
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    const assistantId = crypto.randomUUID();
+
+    setMessages((prev) => [
+      ...prev,
+      userMsg,
+      {
+        id: assistantId,
+        role: 'assistant',
+        content: '',
+        sources: [],
+      },
+    ]);
+
     setInput('');
     setLoading(true);
 
     try {
-      const resp = await fetch(AGENT_CHAT_URL, {
+      const resp = await fetch(BACKEND_STREAM_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: trimmed, sessionId }),
       });
 
-      if (!resp.ok) {
-        const text = await resp.text();
-        throw new Error(`Request failed: ${resp.status} ${text}`);
+      if (!resp.body) {
+        throw new Error('No response body');
       }
 
-      const data = await resp.json(); // { sessionId, answer, sources }
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
 
-      // update / store sessionId from backend
-      if (data.sessionId && data.sessionId !== sessionId) {
-        setSessionId(data.sessionId);
-        localStorage.setItem('sessionId', data.sessionId);
+      let done = false;
+
+      while (!done) {
+        const { value, done: streamDone } = await reader.read();
+        if (streamDone) break;
+
+        const chunkText = decoder.decode(value, { stream: true });
+
+        const lines = chunkText
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((l) => l.startsWith('data:'));
+
+        for (const line of lines) {
+          const jsonStr = line.replace(/^data:\s*/, '');
+          if (!jsonStr) continue;
+          const event = JSON.parse(jsonStr);
+
+          if (event.type === 'meta') {
+            if (event.sessionId && event.sessionId !== sessionId) {
+              setSessionId(event.sessionId);
+              localStorage.setItem('sessionId', event.sessionId);
+            }
+
+            fetch('http://localhost:3000/chat/sessions')
+              .then((res) => res.json())
+              .then((list) => setSessions(list))
+              .catch((err) =>
+                console.error('Failed to refresh sessions list', err),
+              );
+
+            if (event.sources) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, sources: event.sources } : m,
+                ),
+              );
+            }
+          } else if (event.type === 'token') {
+            let chunk: string = event.content ?? '';
+            if (!chunk) continue;
+
+            if (event.encoding === 'base64') {
+              try {
+                chunk = atob(chunk);
+              } catch (e) {
+                console.error('Base64 decode failed:', e);
+                continue;
+              }
+            }
+
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, content: m.content + chunk }
+                  : m,
+              ),
+            );
+          } else if (event.type === 'done') {
+            done = true;
+          }
+        }
       }
-
-      const assistantMsg: Message = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: data.answer ?? '',
-        sources: data.sources ?? [],
-      };
-
-      setMessages((prev) => [...prev, assistantMsg]);
-
-      // refresh sidebar sessions list
-      fetch('http://localhost:3000/chat/sessions')
-        .then((r) => r.json())
-        .then((list) => setSessions(list))
-        .catch((err) =>
-          console.error('Failed to refresh sessions list', err),
-        );
     } catch (err: any) {
       setMessages((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: `Error: ${err.message ?? String(err)}`,
+          content: `Error: ${err.message}`,
         },
       ]);
     } finally {
@@ -166,3 +213,4 @@ const ChatPage: React.FC = () => {
 };
 
 export default ChatPage;
+
