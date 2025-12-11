@@ -10,11 +10,18 @@ export class AgentController {
         @Body()
         body: {
             message: string;
-            history?: AgentTurn[];
+            sessionId?: string;
         },
     ) {
-        const { message, history = [] } = body;
-        const { answer, sources } = await this.agentService.runAgent({ message, history });
-        return { answer, sources };
+        const { message, sessionId } = body;
+
+        const { sessionId: finalSessionId, answer, sources } =
+            await this.agentService.runAgentWithSession({ message, sessionId });
+
+        return {
+            sessionId: finalSessionId,
+            answer,
+            sources,
+        };
     }
 }

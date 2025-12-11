@@ -2,6 +2,13 @@ import { Injectable } from '@nestjs/common';
 import OpenAI from 'openai';
 import { ToolsService } from '../tools/tools.service';
 import { RagSource } from '../rag/rag.service';
+import {
+    createSession,
+    getSession,
+    getRecentTurns,
+    upsertSessionTurn,
+    type Session,
+} from '../chat/session-store';
 
 type Role = 'user' | 'assistant' | 'system';
 
@@ -105,7 +112,7 @@ export class AgentService {
                         contentForLLM = maybeJson.content;
                     }
                 }
-            } catch {}
+            } catch { }
 
             toolMessages.push({
                 role: 'tool',
@@ -124,6 +131,61 @@ export class AgentService {
         return {
             answer: finalChoice.message.content ?? '',
             sources: aggregatedSources,
+        };
+    }
+
+    async runAgentWithSession(args: {
+        message: string;
+        sessionId?: string | null;
+    }): Promise<{ sessionId: string; answer: string; sources: any[] }> {
+        const { message, sessionId } = args;
+
+        if (!message || !message.trim()) {
+            throw new Error('Message is required');
+        }
+
+        // 1) Load or create session
+        let session: Session | null = null;
+
+        if (sessionId) {
+            session = await getSession(sessionId);
+        }
+
+        if (!session) {
+            session = await createSession();
+        }
+
+        // 2) Build history for the agent from recent turns
+        const recentTurns = getRecentTurns(session, 6);
+
+        const history = recentTurns.map((t) => ({
+            role: t.role as Role,      // 'user' | 'assistant'
+            content: t.content,
+        }));
+
+        // 3) Call existing agent logic
+        const { answer, sources } = await this.runAgent({
+            message,
+            history,
+        });
+
+        // 4) Persist both user and assistant turns back into the session
+        session = await upsertSessionTurn(session, {
+            role: 'user',
+            content: message,
+        });
+
+        await upsertSessionTurn(session, {
+            role: 'assistant',
+            content: answer,
+            sources,
+        });
+
+        // 5) Return sessionId so frontend can keep track
+        return {
+            sessionId: session.id,
+            answer,
+            sources,
         };
     }
 }
