@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
 import { AgentService } from './agent.service';
 import { AgentController } from './agent.controller';
-import { ToolsModule } from '../tools/tools.module';
+import { OpenAiModule } from '../openai/openai.module';
 
 @Module({
-    imports: [ToolsModule],
+    imports: [OpenAiModule],
     providers: [AgentService],
     controllers: [AgentController],
 })

@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import OpenAI from 'openai';
-import { ToolsService } from '../tools/tools.service';
 import { RagSource } from '../rag/rag.service';
+import {
+    AgentTurn,
+    AgentStreamEvent,
+    OpenAiResponsesService,
+} from '../openai/openai-responses.service';
 import {
     createSession,
     getSession,
@@ -10,133 +13,17 @@ import {
     type Session,
 } from '../chat/session-store';
 
-type Role = 'user' | 'assistant' | 'system';
-
-type AgentStreamEvent =
-    | { type: 'meta'; sources: RagSource[] }
-    | { type: 'token'; content: string }
-    | { type: 'done' };
-
-export type AgentTurn = {
-    role: Role;
-    content: string;
-};
+export type { AgentTurn };
 
 @Injectable()
 export class AgentService {
-    private readonly openai: OpenAI;
-    private readonly model: string;
-
-    constructor(private readonly toolsService: ToolsService) {
-        const apiKey = process.env.OPENAI_API_KEY;
-        if (!apiKey) {
-            throw new Error('OPENAI_API_KEY is not set');
-        }
-
-        this.openai = new OpenAI({ apiKey });
-        this.model = process.env.LLM_MODEL || 'gpt-4.1-mini';
-    }
+    constructor(private readonly openAiResponses: OpenAiResponsesService) {}
 
     async runAgent(args: {
         message: string;
         history?: AgentTurn[];
-    }): Promise<{ answer: string; sources: any[] }> {
-        const { message, history = [] } = args;
-
-        const baseMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-            {
-                role: 'system',
-                content:
-                    'You are an assistant with access to function tools.\n' +
-                    '- Use `rag_query` to look up information in the local knowledge base (PDFs, documents, internal content, lab sheets, etc).\n' +
-                    '- Use `web_search` ONLY for up-to-date or web-based information (news, weather, very recent events, things not in the local docs).\n' +
-                    '- Prefer `rag_query` when the user asks about known documents or material that could plausibly be in the indexed knowledge base.\n' +
-                    '- Do NOT guess when you can use a tool; call the tool, inspect the results, then answer.\n',
-            },
-            ...history.map((t) => ({
-                role: t.role,
-                content: t.content,
-            })),
-            { role: 'user', content: message },
-        ];
-
-        const tools = this.toolsService.getToolDefinitions();
-
-        const first = await this.openai.chat.completions.create({
-            model: this.model,
-            messages: baseMessages,
-            tools,
-            tool_choice: 'auto',
-        });
-
-        const firstChoice = first.choices[0];
-        const toolCalls = firstChoice.message.tool_calls;
-
-        if (!toolCalls || toolCalls.length === 0) {
-            return {
-                answer: firstChoice.message.content ?? '',
-                sources: [],
-            };
-        }
-
-        const toolMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
-        let aggregatedSources: RagSource[] = [];
-
-        for (const toolCall of toolCalls) {
-            if (toolCall.type !== 'function') continue;
-
-            const toolName = toolCall.function.name;
-            const rawArgs = toolCall.function.arguments ?? '{}';
-
-            let parsedArgs: any;
-            try {
-                parsedArgs = JSON.parse(rawArgs);
-            } catch {
-                parsedArgs = {};
-            }
-
-            const rawResult = await this.toolsService.executeTool(
-                toolName,
-                parsedArgs,
-            );
-
-            let contentForLLM = rawResult;
-
-            try {
-                const maybeJson = JSON.parse(rawResult);
-
-                if (
-                    maybeJson &&
-                    (maybeJson.__rag_type === 'rag_query_result' ||
-                        maybeJson.__rag_type === 'web_query_result')
-                ) {
-                    if (Array.isArray(maybeJson.sources)) {
-                        aggregatedSources = aggregatedSources.concat(maybeJson.sources);
-                    }
-                    if (typeof maybeJson.content === 'string') {
-                        contentForLLM = maybeJson.content;
-                    }
-                }
-            } catch { }
-
-            toolMessages.push({
-                role: 'tool',
-                tool_call_id: toolCall.id,
-                content: contentForLLM,
-            });
-        }
-
-        const second = await this.openai.chat.completions.create({
-            model: this.model,
-            messages: [...baseMessages, firstChoice.message, ...toolMessages],
-        });
-
-        const finalChoice = second.choices[0];
-
-        return {
-            answer: finalChoice.message.content ?? '',
-            sources: aggregatedSources,
-        };
+    }): Promise<{ answer: string; sources: RagSource[] }> {
+        return this.openAiResponses.generateResponse(args);
     }
 
     async runAgentWithSession(args: {
@@ -162,7 +49,7 @@ export class AgentService {
         const recentTurns = getRecentTurns(session, 6);
 
         const history = recentTurns.map((t) => ({
-            role: t.role as Role,
+            role: t.role as AgentTurn['role'],
             content: t.content,
         }));
 
@@ -193,122 +80,7 @@ export class AgentService {
         message: string;
         history?: AgentTurn[];
     }): AsyncGenerator<AgentStreamEvent> {
-        const { message, history = [] } = args;
-
-        const baseMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-            {
-                role: 'system',
-                content:
-                    [
-                        'You are an assistant with access to function tools.',
-                        '',
-                        'ROUTING RULES:',
-                        '- First, decide whether the user’s question is about the LOCAL DOCUMENTS or about GENERAL/WORLD knowledge.',
-                        '- Questions about courses, lab sheets, PDFs, internal notes, assignments, or anything that could plausibly be in the indexed knowledge base → use `rag_query`.',
-                        '- Questions about news, sports (e.g. Formula 1), world events, geography, pop culture, or generic facts → DO NOT call `rag_query`. Use `web_search` for up-to-date info, or answer from your own knowledge.',
-                        '',
-                        'USING RAG (`rag_query`):',
-                        '- Only call `rag_query` when the question is clearly about the local documents.',
-                        '- If the RAG results look unrelated or very generic, you may IGNORE them and answer from general knowledge instead.',
-                        '- If you answer from general knowledge and the documents were not actually helpful, DO NOT mention the RAG results as “Sources”.',
-                        '',
-                        'SOURCES & EXPLANATIONS:',
-                        '- Only treat RAG results as “Sources” when they genuinely informed your answer.',
-                        '- Do not mention random or irrelevant documents just because RAG returned them.',
-                        '',
-                        'WEB SEARCH:',
-                        '- Use `web_search` when the user explicitly asks for current/recent information or something that is clearly not in the local documents.',
-                    ].join('\n'),
-            },
-            ...history.map((t) => ({
-                role: t.role,
-                content: t.content,
-            })),
-            { role: 'user', content: message },
-        ];
-
-        const tools = this.toolsService.getToolDefinitions();
-        const first = await this.openai.chat.completions.create({
-            model: this.model,
-            messages: baseMessages,
-            tools,
-            tool_choice: 'auto',
-        });
-
-        const firstChoice = first.choices[0];
-        const toolCalls = firstChoice.message.tool_calls;
-
-        const toolMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
-        let aggregatedSources: RagSource[] = [];
-
-        if (toolCalls && toolCalls.length > 0) {
-            for (const toolCall of toolCalls) {
-                if (toolCall.type !== 'function') continue;
-
-                const toolName = toolCall.function.name;
-                const rawArgs = toolCall.function.arguments ?? '{}';
-
-                let parsedArgs: any;
-                try {
-                    parsedArgs = JSON.parse(rawArgs);
-                } catch {
-                    parsedArgs = {};
-                }
-
-                const rawResult = await this.toolsService.executeTool(toolName, parsedArgs);
-
-                let contentForLLM = rawResult;
-
-                try {
-                    const maybeJson = JSON.parse(rawResult);
-
-                    if (
-                        maybeJson &&
-                        (maybeJson.__rag_type === 'rag_query_result' ||
-                            maybeJson.__rag_type === 'web_query_result')
-                    ) {
-                        if (Array.isArray(maybeJson.sources)) {
-                            aggregatedSources = aggregatedSources.concat(maybeJson.sources);
-                        }
-                        if (typeof maybeJson.content === 'string') {
-                            contentForLLM = maybeJson.content;
-                        }
-                    }
-                } catch { }
-
-                toolMessages.push({
-                    role: 'tool',
-                    tool_call_id: toolCall.id,
-                    content: contentForLLM,
-                });
-            }
-        }
-
-        yield {
-            type: 'meta',
-            sources: aggregatedSources,
-        };
-
-        const stream = await this.openai.chat.completions.create({
-            model: this.model,
-            messages: [...baseMessages, firstChoice.message, ...toolMessages],
-            stream: true,
-        });
-
-        for await (const chunk of stream) {
-            const delta = chunk.choices?.[0]?.delta?.content;
-            if (!delta) continue;
-
-            yield {
-                type: 'token',
-                content: delta,
-            };
-        }
-
-        // 4) All done
-        yield {
-            type: 'done',
-        };
+        yield* this.openAiResponses.generateResponseStream(args);
     }
 
 }
