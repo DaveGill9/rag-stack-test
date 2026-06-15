@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import OpenAI from 'openai';
 import { ToolsService } from '../tools/tools.service';
 import { RagSource } from '../rag/rag.service';
+import { OpenAiEventsService } from './openai-events.service';
 
 type Role = 'user' | 'assistant' | 'system';
 
@@ -20,7 +21,10 @@ export class OpenAiResponsesService {
   private readonly client: OpenAI;
   private readonly model: string;
 
-  constructor(private readonly toolsService: ToolsService) {
+  constructor(
+    private readonly toolsService: ToolsService,
+    private readonly openAiEvents: OpenAiEventsService,
+  ) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       throw new Error('OPENAI_API_KEY is not set');
@@ -46,6 +50,18 @@ export class OpenAiResponsesService {
       tool_choice: 'auto',
     });
 
+    const reasoningSummaries = first.output
+      .filter((item) => item.type === 'reasoning')
+      .map((item) => item.summary?.map((s) => s.text).join(' '))
+      .filter((value): value is string => Boolean(value && value.trim()));
+
+    for (const summary of reasoningSummaries) {
+      this.openAiEvents.emitReasoning({
+        responseId: first.id,
+        summary,
+      });
+    }
+
     const toolCalls = first.output.filter((item) => item.type === 'function_call');
     const aggregatedSources: RagSource[] = [];
 
@@ -63,7 +79,12 @@ export class OpenAiResponsesService {
           parsedArgs = {};
         }
 
-        const rawResult = await this.toolsService.executeTool(toolName, parsedArgs);
+        const rawResult = await this.openAiEvents.requestToolCall({
+          callId: call.call_id,
+          toolName,
+          rawArguments: rawArgs,
+          parsedArguments: parsedArgs,
+        });
         const { contentForModel, sources } = this.parseToolResult(rawResult);
         if (sources.length > 0) {
           aggregatedSources.push(...sources);
